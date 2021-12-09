@@ -1,0 +1,305 @@
+---
+title: "Logistic Regression to Predict Heart Disease"
+output: html_notebook
+author: "Term Project - Group 2 (Chinmayee Thakur, Dennis Duncan, Emma Junying Wu, Renuka Nair)"
+---
+
+The objective of this project is to build a logistic regression model and run statistical tests to assess how strongly are the clinical factors associated with heart disease and how it is related to the higher probability of getting a heart disease. 
+
+This project uses the Cleveland heart disease dataset downloaded from the UCI website. The UCI database contains 76 attributes, but all published experiments refer to using a subset of 14 of them.  In particular, the Cleveland database is the only one that has been used by ML researchers to this date. The "output" field refers to the presence of heart disease in the patient.
+Here is a glimpse of the dataset. 
+
+```{r}
+data <- heart_disease
+head(data)
+
+```
+### Data Dictionary 
+There are 14 columns in the dataset which are set out as mentioned below :
+
+- age : It is a continuous data type which describes the age of the person in years.
+- sex: It is a discrete data type that describes the gender of the person. Here 0 = Female and 1 = Male
+- cp(Chest Pain type): It is a discrete data type that describes the chest pain type with following parameters- 1 = Typical angina; 2 = Atypical angina; 3 = Non-anginal pain ; 4 = Asymptotic
+- trstbps : It is a continuous data type which describes resting blood pressure in mm Hg
+- chol: It is a continuous data type that describes the serum cholesterol in mg/dl
+- fbs: It is a discrete data type that compares the fasting blood sugar of the person with 120 mg/dl. If FBS >120 then 1 = true else 0 = false 
+- restecg: It is a discrete data type that shows the resting ECG results where 0 = normal; 1 = ST-T wave abnormality; 2 = left ventricular hypertrophy 
+- thalachh: It is a continuous data type that describes the max heart rate achieved. 
+- exang: It is a discrete data type where exercise induced angina is shown by 1 = Yes and 0 = No 
+- oldpeak: It is a continuous data type that shows the depression induced by exercise relative to weight 
+- slope: It is a discrete data type that shows us the slope of the peak exercise segment where 1= up-sloping; 2 = flat; 3 = down-sloping 
+- ca: It is a continuous data type that shows us the number of major vessels colored by fluoroscopy that ranges from 0 to 3. 
+- thal: It is a discrete data type that shows us Thalassemia where 3 = normal ; 6 = fixed defect ; 7 = reversible defect. 
+- output: It is a discrete data type where diagnosis class 0 = No Presence and 1 = Presence of heart disease
+
+Let's do some data pre-processing to get the numerical and categorical variables cleaned, removing any junk characters and managing the missed values.
+
+```{r}
+data[data=="?"] <- NA ##replacing junk characters with NA
+
+data$sex <- as.factor(data$sex)
+data$cp <- as.factor(data$cp)
+data$fbs <- as.factor(data$fbs)
+data$restecg <- as.factor(data$restecg)
+data$exang <- as.factor(data$exang)
+data$slope <- as.factor(data$slope)
+
+data$ca <- as.integer(data$ca)
+data$thall <- as.integer(data$thall)
+
+
+data$output <- as.factor(data$output)
+
+```
+
+Let's see how many values are missing : 
+
+```{r}
+library(Amelia)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+missmap(data, main = "Missing values vs Observed")
+```
+
+Lucky for us, there are only 6 missing values so we can safely omit out the missing values before fitting the model.
+
+```{r}
+data <- na.omit(data)
+```
+
+### Data Exploration 
+
+Let's see how some of the predictor variables interact with each other and with the output variable.
+
+```{r message=FALSE, warning=FALSE}
+library(corrplot)
+
+corrplot(cor(subset(data, select=c(1,4,5,8,10))), method = "square")
+```
+#### How predictors affect the probability of heart disease
+
+```{r fig.height=8, fig.width=12}
+library(ggplot2)
+##Age
+p1 <- ggplot(data, aes(x=output,y=age)) +
+  geom_boxplot() +
+  labs (title = "Age Vs Heart Disease",
+        y= "Age", x= "Probability of Heart Disease")
+
+## Cholesterol
+p2 <- ggplot(data, aes(output,chol)) + 
+  geom_jitter(mapping=aes(colour=sex),alpha=0.4) +
+  labs (title = "Cholesterol Vs Probability of heart disease",
+        y= "Cholesterol", x= "Probability of Heart Disease")
+
+library(gridExtra)
+grid.arrange(p1,p2,ncol=2)
+```
+
+### Fitting the Model
+
+- Before fitting the model, we will split the data into two chunks in order to train and test the data. 
+
+```{r}
+set.seed(321)
+list <- sample(c(TRUE, FALSE), nrow(data), replace = T, prob = c(0.8,0.2))
+
+train_data <- data[list,]
+
+test_data  <- data[!list,]
+
+```
+
+- After splitting, we can now fit our logistic regression model using the training data 
+
+```{r}
+mylogit <- glm(output ~ . , data = train_data, family = binomial(link='logit'))
+summary(mylogit)
+```
+
+### Interpreting the model 
+
+- Looking at the summary we can see that the predictors like `restecg`, `thalachh` and `oldpeak` are not statistically significant.
+- `sex`, `exang` and `ca` look like the most statistically significant predictors of heart disease as can be seen from their low p-values 
+
+### Stepwise Regression
+
+- Employing stepwise regression to keep only the most significant independent variables and build a smaller model. 
+- With each iteration, we would weed out the statistically insignificant variables to finally arrive at a model that has the least AIC score.
+
+```{r}
+## Stepwise Regression 
+mylogit.step <- step(mylogit)
+```
+
+Let us take a look at the summary of the smaller model :
+```{r}
+summary(mylogit.step)
+```
+
+
+#### Evaluating the Model
+
+- Let us now evaluate our model using some basic measures 
+
+##### Cross Validation 
+
+A very common measure to evaluate a model is by cross validation. We can see that the 10-fold cross validation accuracy measure looks good for the model mylogit.step.
+Comparing it with the model mylogit, we can see that the smaller model (mylogit.step) has a much better cross validation estimate of accuracy.
+
+```{r}
+library(DAAG)
+CVbinary(mylogit.step,nfolds = 10) ## Smaller model
+```
+
+```{r}
+CVbinary(mylogit, nfolds=10) ## Bigger model
+```
+
+
+##### Pseudo $R^2$
+
+While no exact equivalent to the $R^2$ of linear regression exists, the McFadden $R^2$ index can be used to assess the model fit.
+Ideally this value must be as close to 1 as possible but it is very uncommon to find such strong predictors in a model. Our model is showing a decent score of 0.514
+
+```{r}
+## R square equivalent
+
+
+library(pscl)
+pR2(mylogit.step)
+```
+
+##### ANOVA
+
+We can also use anova to see how our model fares in comparison to the null model (output ~ .)
+This difference in the residual deviance of both the models is significant.
+
+```{r}
+anova(mylogit.step, test="Chisq")
+```
+We can see from the anova that predictors like `cp`, `ca` and `slope` seem to play an important part in reducing the deviance.
+
+```{r}
+
+```
+
+Now, let us try plotting some residual plot and Normal Q-Q plot to represent our model :
+
+```{r fig.height=10, fig.width=10}
+resdf <- data.frame(mylogit.step$residuals,mylogit.step$fitted.values,train_data$sex)
+names(resdf) <- c("residuals","fitted.values","sex")
+
+p3 <- ggplot (resdf, aes(x=fitted.values, y=residuals)) +
+  geom_point(aes(colour=sex),shape=4,size=3,alpha=0.8)+
+  labs (title = "Residual Plot",
+        x= "Fitted Values",
+        y= "Residuals")
+
+p4 <- ggplot (resdf, aes(sample=residuals)) +
+  stat_qq(mapping=aes(colour=sex),shape=21, size=2) + 
+  stat_qq_line(colour="purple")+ 
+  labs (title = "Normal Q-Q Plot",
+        x= "Z score",
+        y= "Residuals")
+
+grid.arrange(p3,p4,nrow=2)
+```
+
+```{r}
+
+
+```
+
+
+#### Assessing the Predictive Ability of Model
+
+- Although we did evaluate our model above, we would like to see how well our model can predict the output for a new dataset (test data) 
+- Our decision boundary will be $0.5$ for created fitted values: $$
+    \hat{y}=\begin{cases}
+    1 & if\quad P(y=1|X)>0.5\\
+    0 & otherwise
+    \end{cases}
+    $$
+
+```{r}
+fitted.results <- predict(mylogit.step,test_data,type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+misClasificError <- mean(fitted.results != test_data$output, na.rm = T)
+print(paste('Accuracy',1-misClasificError))
+```
+- We can see that accuracy comes out to *81.36%* on the test dataset which is a good result.
+- As a last step, we are going to plot the ROC curve and calculate the AUC (area under the curve) which are typical performance measurements for a binary classifier.
+
+```{r}
+library(ROCR)
+p <- predict(mylogit.step,test_data,type='response')
+pr <- prediction(p, test_data$output)
+```
+
+And here is the ROC plot:
+
+```{r}
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf,colorize=TRUE)
+```
+Calculating the AUC (area under the curve):
+
+```{r}
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+As a rule of thumb, a model with good predictive ability should have an AUC closer to 1 (1 is ideal) than to 0.5. Our model showing *0.931* AUC is a good sign.
+
+
+#### Plotting the Test Data Predictions
+
+- Here is graph showing the signature sigmoidal curve associated with logistic regression.
+- Looking at the graph colour coded by sex, we can easily see a larger portion of data points showing heart disease belong to male category
+
+```{r echo=FALSE}
+plot_data <- cbind(test_data,predict(mylogit.step,test_data,type='response'))
+names(plot_data)[names(plot_data) == "predict(mylogit.step, test_data, type = \"response\")"] <- "fitted.values"
+
+plot_data$pred <- plogis(plot_data$fitted.values)
+
+plot_data <- plot_data [
+  order (plot_data$pred, decreasing=FALSE),]
+plot_data$rank <- 1:nrow(plot_data)
+
+
+ggplot(plot_data,aes( colour=sex)) + ##geom_point() +
+  geom_point(plot_data,mapping=aes(x=rank, y=fitted.values),alpha=0.4,shape=19, size=2) +
+  labs ( title= "Sigmoidal Curve for the Logistic Regression Model",
+         x = "", y = "Predicted Output")
+
+```
+#### Joint Ellipse Confidence Region
+
+As can be seen in our Joint Confidence Region plot 
+
++ Zero point is outside both the 95% CI of `ca` as well as `trtbps` so we can conclude that we reject null hypothesis 
+
+$$H_0 : \beta_{ca} = \beta_{trtbps} = 0$$ 
+
++ Zero point also lies outside the joint 95% CR further implying that we can reject the null hypothesis
+
++ The 95% CR is equivalent to testing the full model versus the reduced model using a level of significance equal to 5%
+
+```{r fig.height=8, fig.width=8, message=FALSE, warning=FALSE}
+library(ellipse)
+plot(ellipse(mylogit.step,c("ca", "trtbps")), type="l",
+     xlim = c(0,2),
+     ##ylim = c(-0.005,0.02),
+     main = "Joint Confidence Region") 
+points(0,0) 
+points(coef(mylogit.step)["ca"], coef(mylogit.step)["trtbps"], pch=18)
+abline(v=confint(mylogit.step)["ca",], lty=2, col="purple")
+abline(h=confint(mylogit.step)["trtbps",], lty=2, col="purple")
+
+```
+
+
